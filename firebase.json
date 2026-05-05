@@ -1,0 +1,28 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "blood-donation-8367a",
+          "appId": "1:1066971051364:android:bce746237e6dd4ee073671",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "blood-donation-8367a",
+          "configurations": {
+            "android": "1:1066971051364:android:bce746237e6dd4ee073671",
+            "ios": "1:1066971051364:ios:502be37989d8780c073671",
+            "macos": "1:1066971051364:ios:502be37989d8780c073671",
+            "web": "1:1066971051364:web:ba786b95917a65ec073671",
+            "windows": "1:1066971051364:web:d044b36a11e5088f073671"
+          }
+        }
+      }
+    }
+  }
+}

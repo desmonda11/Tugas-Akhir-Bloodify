@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1066971051364",
+    "firebase_url": "https://blood-donation-8367a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "blood-donation-8367a",
+    "storage_bucket": "blood-donation-8367a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1066971051364:android:bce746237e6dd4ee073671",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1066971051364-chnljcbjmvlfpi2nttqhuev1ac81a0td.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPwsB5Uaf5X0I2pHALPrUb4qTvCYZdK18"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1066971051364-chnljcbjmvlfpi2nttqhuev1ac81a0td.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1066971051364-ojje3rg0cu0i8gbis8o92uibusegeneo.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.flutterApplication1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,26 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+    
+    tasks.withType(JavaCompile).configureEach {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        options.compilerArgs << "-Xlint:-deprecation" << "-Xlint:-options" << "-nowarn"
+        options.warnings = false
+        options.deprecation = false
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
