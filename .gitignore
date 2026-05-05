@@ -44,7 +44,25 @@ app.*.map.json
 
 .vscode/templates
 
+# Secret files
 serviceAccountKey.json
-firebase-debug.log
 .env
 .env.*
+*.pem
+*.key
+*.p12
+
+# Logs
+firebase-debug.log
+firestore-debug.log
+
+# Flutter generated files
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.vscode/
+.idea/
+*.iml
