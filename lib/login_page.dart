@@ -4,8 +4,6 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-import 'forgot_password_page.dart';
-import 'daftar_page.dart';
 import 'main.dart';
 import 'admin_page.dart';
 
@@ -48,26 +46,31 @@ class _LoginPageState extends State<LoginPage> {
 
       final user = FirebaseAuth.instance.currentUser;
       final email = _emailController.text.trim().toLowerCase();
-      
-      // Ambil data user dari Firestore untuk cek role
+
       DocumentSnapshot? userDoc;
       if (user != null) {
-        userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
       }
-      
+
       final bool isBanned = (userDoc != null && userDoc.exists)
           ? (userDoc.data() as Map<String, dynamic>)['isBanned'] == true
           : false;
+
       final String role = (userDoc != null && userDoc.exists)
           ? (userDoc.data() as Map<String, dynamic>)['role'] ?? 'user'
           : 'user';
 
-      // Pengecekan Admin: berdasarkan email hardcoded ATAU role di Firestore
-      final bool isAdmin = (email == _adminEmail.toLowerCase()) || (role == 'admin');
+      final bool isAdmin =
+          email == _adminEmail.toLowerCase() || role == 'admin';
 
       if (isBanned && !isAdmin) {
         await FirebaseAuth.instance.signOut();
+
         if (!mounted) return;
+
         await showDialog(
           context: context,
           barrierDismissible: false,
@@ -86,20 +89,26 @@ class _LoginPageState extends State<LoginPage> {
             ],
           ),
         );
-        if (mounted) setState(() => _isLoading = false);
+
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+
         return;
       }
 
-      // Cek apakah email sudah diverifikasi (Bypass untuk Admin)
       if (user != null && !user.emailVerified && !isAdmin) {
         await FirebaseAuth.instance.signOut();
+
         if (!mounted) return;
-        // ... (sisanya sama untuk blokir user biasa)
+
         await showDialog(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: const Row(
               children: [
                 Icon(Icons.email_outlined, color: Colors.orange),
@@ -119,19 +128,23 @@ class _LoginPageState extends State<LoginPage> {
               ElevatedButton(
                 onPressed: () async {
                   try {
-                    final credential = await FirebaseAuth.instance
-                        .signInWithEmailAndPassword(
+                    final credential =
+                        await FirebaseAuth.instance.signInWithEmailAndPassword(
                       email: _emailController.text.trim(),
                       password: _passwordController.text.trim(),
                     );
+
                     await credential.user!.sendEmailVerification();
                     await FirebaseAuth.instance.signOut();
+
                     if (!ctx.mounted) return;
                     Navigator.pop(ctx);
+
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text("Link verifikasi berhasil dikirim ulang!"),
+                        content:
+                            Text("Link verifikasi berhasil dikirim ulang!"),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -143,7 +156,8 @@ class _LoginPageState extends State<LoginPage> {
                   backgroundColor: const Color(0xFFD32F2F),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 child: const Text("Kirim Ulang"),
               ),
@@ -151,22 +165,28 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
 
-        if (mounted) setState(() => _isLoading = false);
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+
         return;
       }
 
       if (!mounted) return;
 
-      // Redirect berdasarkan status isAdmin
       if (isAdmin) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const AdminPage()),
+          MaterialPageRoute(
+            builder: (context) => const AdminPage(),
+          ),
         );
       } else {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const MainPage()),
+          MaterialPageRoute(
+            builder: (context) => const MainPage(),
+          ),
         );
       }
 
@@ -181,7 +201,8 @@ class _LoginPageState extends State<LoginPage> {
 
       if (e.code == 'user-not-found') {
         message = "Akun tidak ditemukan";
-      } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+      } else if (e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
         message = "Email atau password salah";
       } else if (e.code == 'invalid-email') {
         message = "Format email tidak valid";
@@ -213,38 +234,60 @@ class _LoginPageState extends State<LoginPage> {
       User? user;
 
       if (kIsWeb) {
-        // Gunakan signInWithPopup khusus Web agar stabil & bypass config GoogleSignIn
-        GoogleAuthProvider authProvider = GoogleAuthProvider();
-        final UserCredential userCredential = await FirebaseAuth.instance.signInWithPopup(authProvider);
+        final GoogleAuthProvider authProvider = GoogleAuthProvider();
+
+        authProvider.setCustomParameters({
+          'prompt': 'select_account',
+        });
+
+        final UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithPopup(authProvider);
+
         user = userCredential.user;
       } else {
-        // Native Google Sign in untuk Android
         final GoogleSignIn googleSignIn = GoogleSignIn();
+
+        try {
+          await googleSignIn.signOut();
+        } catch (_) {
+          // Abaikan jika belum pernah login Google.
+        }
+
         final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
         if (googleUser == null) {
-          if (mounted) setState(() => _isLoading = false);
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
           return;
         }
 
-        final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+        final GoogleSignInAuthentication googleAuth =
+            await googleUser.authentication;
+
         final AuthCredential credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
 
-        final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        final UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithCredential(credential);
+
         user = userCredential.user;
       }
 
       if (user != null) {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final docRef =
+            FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+        final doc = await docRef.get();
+
         if (!doc.exists) {
           final names = user.displayName?.split(' ') ?? [];
           final firstName = names.isNotEmpty ? names.first : 'User';
           final lastName = names.length > 1 ? names.sublist(1).join(' ') : '';
 
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          await docRef.set({
             'email': user.email,
             'firstName': firstName,
             'lastName': lastName,
@@ -255,13 +298,22 @@ class _LoginPageState extends State<LoginPage> {
           });
         }
 
-        final bool isBanned = doc.exists
-            ? (doc.data() as Map<String, dynamic>)['isBanned'] == true
-            : false;
+        final latestDoc = await docRef.get();
+        final userData = latestDoc.data() ?? {};
 
-        if (isBanned) {
+        final bool isBanned = userData['isBanned'] == true;
+        final String role = userData['role']?.toString() ?? 'user';
+        final String email = user.email ?? '';
+
+        final bool isAdmin =
+            email.toLowerCase() == _adminEmail.toLowerCase() ||
+                role == 'admin';
+
+        if (isBanned && !isAdmin) {
           await FirebaseAuth.instance.signOut();
+
           if (!mounted) return;
+
           await showDialog(
             context: context,
             barrierDismissible: false,
@@ -280,30 +332,47 @@ class _LoginPageState extends State<LoginPage> {
               ],
             ),
           );
-          if (mounted) setState(() => _isLoading = false);
+
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
+
           return;
         }
 
         if (!mounted) return;
 
-        final email = user.email ?? '';
-        final String role = (doc.exists)
-            ? (doc.data() as Map<String, dynamic>)['role'] ?? 'user'
-            : 'user';
-        
-        final bool isAdmin = (email.toLowerCase() == _adminEmail.toLowerCase()) || (role == 'admin');
-
         if (isAdmin) {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const AdminPage()));
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AdminPage(),
+            ),
+          );
         } else {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const MainPage()));
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const MainPage(),
+            ),
+          );
         }
 
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Login Google berhasil"), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Login Google berhasil"),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Login Google gagal: $e"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Login Google gagal: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -319,6 +388,34 @@ class _LoginPageState extends State<LoginPage> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: label.toLowerCase() == "email"
+              ? TextInputType.emailAddress
+              : TextInputType.text,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -397,24 +494,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ForgotPasswordPage(),
-                    ),
-                  );
-                },
-                child: const Text(
-                  "Forget your password?",
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -449,12 +528,25 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 20),
             Row(
               children: [
-                Expanded(child: Divider(thickness: 1, color: Colors.grey.shade300)),
+                Expanded(
+                  child: Divider(
+                    thickness: 1,
+                    color: Colors.grey.shade300,
+                  ),
+                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Text("Atau login dengan", style: TextStyle(color: Colors.grey)),
+                  child: Text(
+                    "Atau login dengan",
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ),
-                Expanded(child: Divider(thickness: 1, color: Colors.grey.shade300)),
+                Expanded(
+                  child: Divider(
+                    thickness: 1,
+                    color: Colors.grey.shade300,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -481,62 +573,10 @@ class _LoginPageState extends State<LoginPage> {
                 side: BorderSide(color: Colors.grey.shade300, width: 1.5),
               ),
             ),
-            const SizedBox(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text("Belum punya akun? "),
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const DaftarPage(),
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    "Daftar",
-                    style: TextStyle(
-                      color: Color(0xFFD32F2F),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 20),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTextField(String label, TextEditingController controller) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w500),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          keyboardType: label.toLowerCase() == "email"
-              ? TextInputType.emailAddress
-              : TextInputType.text,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(30),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 16,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

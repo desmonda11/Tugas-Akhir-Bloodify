@@ -524,7 +524,7 @@ class _AdminNotificationSectionState extends State<_AdminNotificationSection> {
                   leading: const Icon(Icons.settings, color: Colors.blue),
                   title: const Text("Atur Template Notifikasi Otomatis",
                       style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: const Text("Gunakan [NAMA] dan [GOL] sebagai kode",
+                  subtitle: const Text("Gunakan [NAMA] dan [GOL] [KATEGORI] sebagai kode",
                       style: TextStyle(fontSize: 12)),
                   children: [
                     Padding(
@@ -546,7 +546,7 @@ class _AdminNotificationSectionState extends State<_AdminNotificationSection> {
                             decoration: const InputDecoration(
                               labelText: "Template Isi Pesan",
                               border: OutlineInputBorder(),
-                              hintText: "Gunakan [NAMA] dan [GOL] di sini.",
+                              hintText: "Gunakan [NAMA], [GOL], dan [KATEGORI] di sini.",
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -995,45 +995,64 @@ class _AdminReportSection extends StatefulWidget {
 class _AdminReportSectionState extends State<_AdminReportSection> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Future<void> _addSampleReport() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    final reporter = currentUser?.uid ?? 'sample_admin';
-
-    await _db.collection('reports').add({
-      'chatId': 'sample_chat_001',
-      'messageId': 'sample_message_001',
-      'senderId': 'sample_user_001',
-      'messageText':
-          'Pesan transaksi mencurigakan, minta data pribadi dan uang.',
-      'reportedBy': reporter,
-      'reason': 'Penipuan',
-      'note': 'Contoh laporan untuk pengujian admin.',
-      'createdAt': FieldValue.serverTimestamp(),
-      'status': 'pending',
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan contoh berhasil ditambahkan.')),
-      );
-    }
-  }
-
   Future<void> _resolveReport(String reportId) async {
     await _db.collection('reports').doc(reportId).update({
       'status': 'resolved',
       'reviewedAt': FieldValue.serverTimestamp(),
     });
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Laporan berhasil diselesaikan.')),
+        const SnackBar(
+          content: Text('Laporan berhasil diselesaikan.'),
+          backgroundColor: Colors.green,
+        ),
       );
     }
   }
 
   Future<void> _banUser(String userId, String reportId) async {
+    if (userId.trim().isEmpty || userId == '-') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('User terlapor tidak valid.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Banned Akun?"),
+          content: const Text(
+            "Akun terlapor akan diblokir dan tidak bisa memakai aplikasi. Lanjutkan?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Batal"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Banned"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
     final userRef = _db.collection('users').doc(userId);
     final reportRef = _db.collection('reports').doc(reportId);
+
     await _db.runTransaction((transaction) async {
       transaction.set(userRef, {'isBanned': true}, SetOptions(merge: true));
       transaction.update(reportRef, {
@@ -1041,11 +1060,91 @@ class _AdminReportSectionState extends State<_AdminReportSection> {
         'reviewedAt': FieldValue.serverTimestamp(),
       });
     });
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Akun terlapor telah dibanned.')),
+        const SnackBar(
+          content: Text('Akun terlapor telah dibanned.'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
+  }
+
+  String _formatDate(Timestamp? timestamp) {
+    if (timestamp == null) return '-';
+
+    return DateFormat('dd MMM yyyy, HH:mm').format(timestamp.toDate());
+  }
+
+  Color _statusColor(String status) {
+    if (status == 'pending') return Colors.orange;
+    if (status == 'banned') return Colors.red;
+    if (status == 'resolved') return Colors.green;
+    return Colors.grey;
+  }
+
+  Future<String> _getUserName(String uid) async {
+    if (uid.trim().isEmpty || uid == '-') return '-';
+
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      final data = doc.data();
+
+      if (data == null) return uid;
+
+      final firstName = data['firstName']?.toString() ?? '';
+      final lastName = data['lastName']?.toString() ?? '';
+      final email = data['email']?.toString() ?? '';
+
+      final name = "$firstName $lastName".trim();
+
+      if (name.isNotEmpty) return name;
+      if (email.isNotEmpty) return email;
+
+      return uid;
+    } catch (_) {
+      return uid;
+    }
+  }
+
+  Widget _userText(String label, String uid) {
+    return FutureBuilder<String>(
+      future: _getUserName(uid),
+      builder: (context, snapshot) {
+        final name = snapshot.data ?? uid;
+
+        return Text(
+          "$label: $name",
+          style: const TextStyle(fontSize: 13),
+        );
+      },
+    );
+  }
+
+  void _openFullChat({
+    required String chatId,
+    required String reportedMessageId,
+  }) {
+    if (chatId.trim().isEmpty || chatId == '-') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chat ID tidak valid.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _AdminReportedChatPage(
+          chatId: chatId,
+          reportedMessageId: reportedMessageId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1057,12 +1156,6 @@ class _AdminReportSectionState extends State<_AdminReportSection> {
         backgroundColor: Colors.red.shade800,
         foregroundColor: Colors.white,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addSampleReport,
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Laporan Contoh'),
-        backgroundColor: Colors.red.shade800,
-      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _db
             .collection('reports')
@@ -1070,13 +1163,23 @@ class _AdminReportSectionState extends State<_AdminReportSection> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Terjadi kesalahan: ${snapshot.error}'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'Terjadi kesalahan: ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
+
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
           final docs = snapshot.data!.docs;
+
           if (docs.isEmpty) {
             return const Center(
               child: Column(
@@ -1084,8 +1187,10 @@ class _AdminReportSectionState extends State<_AdminReportSection> {
                 children: [
                   Icon(Icons.report, size: 64, color: Colors.grey),
                   SizedBox(height: 16),
-                  Text('Belum ada laporan chat mencurigakan.',
-                      style: TextStyle(color: Colors.grey)),
+                  Text(
+                    'Belum ada laporan chat mencurigakan.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ],
               ),
             );
@@ -1097,96 +1202,142 @@ class _AdminReportSectionState extends State<_AdminReportSection> {
             itemBuilder: (context, index) {
               final doc = docs[index];
               final data = doc.data() as Map<String, dynamic>;
-              final chatId = data['chatId'] ?? '-';
-              final messageText = data['messageText'] ?? '-';
-              final reportedBy = data['reportedBy'] ?? '-';
-              final senderId = data['senderId'] ?? '-';
-              final reason = data['reason'] ?? '-';
-              final note = data['note'] ?? '';
-              final status = data['status'] ?? 'pending';
-              final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+
+              final String chatId = data['chatId']?.toString() ?? '-';
+              final String messageId = data['messageId']?.toString() ?? '-';
+              final String messageText = data['messageText']?.toString() ?? '-';
+              final String reportedBy = data['reportedBy']?.toString() ?? '-';
+              final String senderId = data['senderId']?.toString() ?? '-';
+              final String reason = data['reason']?.toString() ?? '-';
+              final String note = data['note']?.toString() ?? '';
+              final String status = data['status']?.toString() ?? 'pending';
+              final Timestamp? createdAt = data['createdAt'] as Timestamp?;
+
+              final statusColor = _statusColor(status);
 
               return Card(
-                margin: const EdgeInsets.only(bottom: 12),
+                margin: const EdgeInsets.only(bottom: 14),
+                elevation: 3,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: Padding(
                   padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Laporan #${doc.id.substring(0, 6)}',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          CircleAvatar(
+                            backgroundColor: statusColor,
+                            child: const Icon(
+                              Icons.report,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Laporan #${doc.id.substring(0, 6)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: status == 'pending'
-                                  ? Colors.orange.shade100
-                                  : Colors.green.shade100,
-                              borderRadius: BorderRadius.circular(8),
+                              horizontal: 9,
+                              vertical: 5,
                             ),
-                            child: Text(status.toString().toUpperCase(),
-                                style: TextStyle(
-                                    color: status == 'pending'
-                                        ? Colors.orange.shade800
-                                        : Colors.green.shade800,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12)),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: statusColor),
+                            ),
+                            child: Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                color: statusColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      Text('Chat ID: $chatId',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.grey)),
-                      const SizedBox(height: 4),
-                      Text('Akun terlapor: $senderId',
-                          style: const TextStyle(fontSize: 13)),
-                      const SizedBox(height: 4),
-                      Text('Dilaporkan oleh: $reportedBy',
-                          style: const TextStyle(fontSize: 13)),
-                      const SizedBox(height: 8),
-                      Text('Alasan: $reason',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text('Pesan: $messageText'),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Alasan: $reason',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text('Pesan dilaporkan: $messageText'),
                       if (note.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text('Catatan: $note'),
                       ],
-                      if (createdAt != null) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                            'Waktu: ${DateFormat('dd MMM yyyy HH:mm').format(createdAt)}',
-                            style: const TextStyle(
-                                fontSize: 12, color: Colors.grey)),
-                      ],
+                      const SizedBox(height: 10),
+                      _userText('Akun terlapor', senderId),
+                      _userText('Dilaporkan oleh', reportedBy),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Waktu laporan: ${_formatDate(createdAt)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.chat),
+                          label: const Text("Lihat Seluruh Chat"),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade800,
+                            side: BorderSide(color: Colors.red.shade800),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () => _openFullChat(
+                            chatId: chatId,
+                            reportedMessageId: messageId,
+                          ),
+                        ),
+                      ),
                       if (status == 'pending') ...[
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
                             Expanded(
-                              child: ElevatedButton(
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.check),
+                                label: const Text('Selesai'),
                                 onPressed: () => _resolveReport(doc.id),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.green.shade700,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
-                                child: const Text('Tandai Selesai'),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: ElevatedButton(
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.block),
+                                label: const Text('Banned'),
                                 onPressed: () => _banUser(senderId, doc.id),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red.shade700,
+                                  backgroundColor: Colors.red.shade800,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
-                                child: const Text('Banned Akun'),
                               ),
                             ),
                           ],
@@ -1203,6 +1354,337 @@ class _AdminReportSectionState extends State<_AdminReportSection> {
     );
   }
 }
+
+class _AdminReportedChatPage extends StatefulWidget {
+  final String chatId;
+  final String reportedMessageId;
+
+  const _AdminReportedChatPage({
+    required this.chatId,
+    required this.reportedMessageId,
+  });
+
+  @override
+  State<_AdminReportedChatPage> createState() => _AdminReportedChatPageState();
+}
+
+class _AdminReportedChatPageState extends State<_AdminReportedChatPage> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  String _formatTime(Timestamp? timestamp) {
+    if (timestamp == null) return '...';
+
+    final date = timestamp.toDate();
+    return DateFormat('dd MMM yyyy, HH:mm').format(date);
+  }
+
+  Future<String> _getUserName(String uid) async {
+    if (uid.trim().isEmpty) return 'User';
+
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      final data = doc.data();
+
+      if (data == null) return uid;
+
+      final firstName = data['firstName']?.toString() ?? '';
+      final lastName = data['lastName']?.toString() ?? '';
+      final email = data['email']?.toString() ?? '';
+      final name = "$firstName $lastName".trim();
+
+      if (name.isNotEmpty) return name;
+      if (email.isNotEmpty) return email;
+
+      return uid;
+    } catch (_) {
+      return uid;
+    }
+  }
+
+  Future<Map<String, String>> _loadParticipantNames(
+    List<dynamic> participants,
+  ) async {
+    final Map<String, String> result = {};
+
+    for (final id in participants) {
+      final uid = id.toString();
+      result[uid] = await _getUserName(uid);
+    }
+
+    return result;
+  }
+
+  Widget _messageBubble({
+    required String messageId,
+    required Map<String, dynamic> data,
+    required Map<String, String> participantNames,
+  }) {
+    final String text = data['text']?.toString() ?? '';
+    final String senderId = data['senderId']?.toString() ?? '';
+    final Timestamp? createdAt = data['createdAt'] as Timestamp?;
+    final String? imageUrl = data['imageUrl']?.toString();
+    final String? videoUrl = data['videoUrl']?.toString();
+
+    final bool isReported = messageId == widget.reportedMessageId;
+    final String senderName = participantNames[senderId] ?? senderId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isReported ? Colors.orange.shade50 : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isReported ? Colors.orange : Colors.grey.shade300,
+          width: isReported ? 2 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: Colors.red.shade800,
+                child: Text(
+                  senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  senderName,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (isReported)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    "DILAPORKAN",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (imageUrl != null && imageUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  imageUrl,
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+          if (videoUrl != null && videoUrl.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                height: 120,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.play_circle_fill,
+                        color: Colors.white,
+                        size: 44,
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        "Video",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (text.isNotEmpty)
+            Text(
+              text,
+              style: const TextStyle(fontSize: 15),
+            ),
+          const SizedBox(height: 6),
+          Text(
+            _formatTime(createdAt),
+            style: const TextStyle(
+              fontSize: 11,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chatRef = _db.collection('chats').doc(widget.chatId);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF6F6F6),
+      appBar: AppBar(
+        title: const Text("Detail Chat Dilaporkan"),
+        backgroundColor: Colors.red.shade800,
+        foregroundColor: Colors.white,
+      ),
+      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        future: chatRef.get(),
+        builder: (context, chatSnapshot) {
+          if (chatSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (!chatSnapshot.hasData || !chatSnapshot.data!.exists) {
+            return const Center(
+              child: Text("Data chat tidak ditemukan."),
+            );
+          }
+
+          final chatData = chatSnapshot.data!.data() ?? {};
+          final List<dynamic> participants = chatData['participants'] ?? [];
+
+          return FutureBuilder<Map<String, String>>(
+            future: _loadParticipantNames(participants),
+            builder: (context, namesSnapshot) {
+              final participantNames = namesSnapshot.data ?? {};
+
+              return Column(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.yellow.shade100,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Mode Review Admin",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Chat ID: ${widget.chatId}",
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        if (participantNames.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            "Peserta: ${participantNames.values.join(' dan ')}",
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: chatRef.collection('messages').snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Text(
+                              "Gagal memuat chat: ${snapshot.error}",
+                              textAlign: TextAlign.center,
+                            ),
+                          );
+                        }
+
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        final docs = snapshot.data!.docs;
+
+                        final sortedDocs =
+                            List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+                          docs,
+                        );
+
+                        sortedDocs.sort((a, b) {
+                          final aTime =
+                              (a.data()['createdAt'] as Timestamp?)
+                                      ?.millisecondsSinceEpoch ??
+                                  0;
+                          final bTime =
+                              (b.data()['createdAt'] as Timestamp?)
+                                      ?.millisecondsSinceEpoch ??
+                                  0;
+                          return aTime.compareTo(bTime);
+                        });
+
+                        if (sortedDocs.isEmpty) {
+                          return const Center(
+                            child: Text("Belum ada pesan dalam chat ini."),
+                          );
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.all(14),
+                          itemCount: sortedDocs.length,
+                          itemBuilder: (context, index) {
+                            final doc = sortedDocs[index];
+
+                            return _messageBubble(
+                              messageId: doc.id,
+                              data: doc.data(),
+                              participantNames: participantNames,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
 
 // --- SECTION: KUESIONER (CRUD) ---
 class _AdminKuesionerSection extends StatefulWidget {

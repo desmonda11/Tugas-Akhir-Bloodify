@@ -5,9 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart';
-import 'login_page.dart';
+import 'welcome_page.dart';
 import 'dashboard_page.dart';
 import 'permintaan_page.dart';
 import 'chat_list_page.dart';
@@ -15,10 +16,13 @@ import 'chat_page.dart';
 import 'profil_page.dart';
 import 'permintaan_aktif_page.dart';
 import 'admin_page.dart';
+import 'riwayat_donor_page.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   debugPrint("Handling a background message: ${message.messageId}");
 }
 
@@ -41,17 +45,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  await initializeDateFormatting('id_ID', null);
+
   if (!kIsWeb) {
-    // Set background handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // Create channel
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
-    // Foreground settings
     await FirebaseMessaging.instance
         .setForegroundNotificationPresentationOptions(
       alert: true,
@@ -59,22 +62,18 @@ void main() async {
       sound: true,
     );
 
-    // Request Permission
     await FirebaseMessaging.instance.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
 
-    // Subscribe to Topic
     await FirebaseMessaging.instance.subscribeToTopic("blood_requests");
 
-    // Handle clicks when app is in background/terminated
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       _handleNotificationClick(message);
     });
 
-    // Handle messages while the app is in the foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
       AndroidNotification? android = message.notification?.android;
@@ -98,13 +97,10 @@ void main() async {
       }
     });
 
-
-
-    // Check if app was opened from a terminated state via notification
     RemoteMessage? initialMessage =
         await FirebaseMessaging.instance.getInitialMessage();
+
     if (initialMessage != null) {
-      // Delay sedikit agar navigator siap
       Future.delayed(const Duration(seconds: 1), () {
         _handleNotificationClick(initialMessage);
       });
@@ -115,14 +111,17 @@ void main() async {
 }
 
 void _handleNotificationClick(RemoteMessage message) {
-  // Langsung navigasi ke Permintaan Aktif
   navigatorKey.currentState?.push(
-    MaterialPageRoute(builder: (context) => const PermintaanAktifPage()),
+    MaterialPageRoute(
+      builder: (context) => const PermintaanAktifPage(),
+    ),
   );
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
+  static const String adminEmail = 'admin@bloodify.com';
 
   @override
   Widget build(BuildContext context) {
@@ -131,38 +130,50 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+        builder: (context, authSnapshot) {
+          if (authSnapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          if (snapshot.hasData) {
-            final user = snapshot.data!;
-            if (user.email == 'admin@bloodify.com') {
-              return const AdminPage();
-            }
-            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .snapshots(),
-              builder: (context, userSnapshot) {
-                if (userSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                final userData = userSnapshot.data?.data();
-                final bool isBanned = userData?['isBanned'] == true;
-                if (isBanned) {
-                  return const BannedPage();
-                }
-                return const MainPage();
-              },
-            );
+
+          if (!authSnapshot.hasData) {
+            return const WelcomePage();
           }
-          return const LoginPage();
+
+          final user = authSnapshot.data!;
+
+          if (user.email == adminEmail) {
+            return const AdminPage();
+          }
+
+          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .snapshots(),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              final userData = userSnapshot.data?.data();
+              final bool isBanned = userData?['isBanned'] == true;
+              final String role = userData?['role']?.toString() ?? 'user';
+
+              if (role == 'admin') {
+                return const AdminPage();
+              }
+
+              if (isBanned) {
+                return const BannedPage();
+              }
+
+              return const MainPage();
+            },
+          );
         },
       ),
     );
@@ -178,6 +189,7 @@ class BannedPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Akun Diblokir'),
         backgroundColor: Colors.red.shade800,
+        foregroundColor: Colors.white,
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -185,12 +197,19 @@ class BannedPage extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.block, size: 72, color: Colors.red),
+            const Icon(
+              Icons.block,
+              size: 72,
+              color: Colors.red,
+            ),
             const SizedBox(height: 24),
             const Text(
               'Akun Anda telah diblokir oleh admin.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -202,15 +221,19 @@ class BannedPage extends StatelessWidget {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
               ),
               onPressed: () async {
                 await FirebaseAuth.instance.signOut();
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const LoginPage()),
-                    (route) => false,
-                  );
-                }
+
+                if (!context.mounted) return;
+
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (_) => const WelcomePage(),
+                  ),
+                  (route) => false,
+                );
               },
               child: const Text('Keluar'),
             ),
@@ -240,14 +263,28 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   late int _currentIndex;
 
+  final List<Widget> _pages = [
+    const DashboardPage(),
+    const PermintaanPage(),
+    const ChatListPage(),
+    const RiwayatDonorPage(),
+    const ProfilPage(),
+  ];
+
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
+
+    if (widget.initialIndex < 0 || widget.initialIndex >= _pages.length) {
+      _currentIndex = 0;
+    } else {
+      _currentIndex = widget.initialIndex;
+    }
 
     if (widget.forcePushChatId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final currentUser = FirebaseAuth.instance.currentUser;
+
         if (currentUser != null) {
           Navigator.push(
             context,
@@ -264,14 +301,9 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  final List<Widget> _pages = [
-    const DashboardPage(),
-    const PermintaanPage(),
-    const ChatListPage(),
-    const ProfilPage(),
-  ];
-
   void _changePage(int index) {
+    if (index < 0 || index >= _pages.length) return;
+
     setState(() {
       _currentIndex = index;
     });
@@ -279,7 +311,10 @@ class _MainPageState extends State<MainPage> {
 
   Widget _buildChatIcon() {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return const Icon(Icons.chat);
+
+    if (currentUser == null) {
+      return const Icon(Icons.chat);
+    }
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
@@ -287,11 +322,15 @@ class _MainPageState extends State<MainPage> {
           .where('participants', arrayContains: currentUser.uid)
           .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Icon(Icons.chat);
+        if (!snapshot.hasData) {
+          return const Icon(Icons.chat);
+        }
 
         int total = 0;
+
         for (var doc in snapshot.data!.docs) {
           final data = doc.data();
+
           if (data['unreadCount'] != null &&
               data['unreadCount'][currentUser.uid] != null) {
             total += data['unreadCount'][currentUser.uid] as int;
@@ -304,6 +343,7 @@ class _MainPageState extends State<MainPage> {
             child: const Icon(Icons.chat),
           );
         }
+
         return const Icon(Icons.chat);
       },
     );
@@ -334,6 +374,10 @@ class _MainPageState extends State<MainPage> {
           BottomNavigationBarItem(
             icon: _buildChatIcon(),
             label: "Chat",
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: "Riwayat",
           ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.person),
